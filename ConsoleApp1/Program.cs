@@ -20,16 +20,17 @@ public class Store
                 productsStatisticCounter.IncreaseProductQuantity(item);
             }
         }
-
-        var productsStatistics = productsStatisticCounter.GetStatisticQuantityFiltered();
+        
+        var productsStatistic = productsStatisticCounter.productsStatistic;
+        productsStatistic.Sort((x, y) => y.Quantity.CompareTo(x.Quantity));
         var resultStringBuilder = new StringBuilder();
         var productCounter = 1;
-        foreach (var product in productsStatistics)
+        foreach (var product in productsStatistic)
         {
             var foundedProduct = Products.Find(i => i.Id == product.ProductId);
             resultStringBuilder.Append($"{productCounter++}) {foundedProduct.Name} {product.Quantity} item(s)\r\n");
         }
-
+        
         return resultStringBuilder.ToString();
     }
 
@@ -40,43 +41,35 @@ public class Store
     /// </summary>
     public string GetYearsStatistics()
     {
-        var yearsList = new List<int>();
+        var yearsProductsStatistics = new Dictionary<int, ProductsStatisticCounter>();
+
+        var resultStringBuilder = new StringBuilder();
         foreach (var order in Orders)
         {
-            if (!yearsList.Contains(order.OrderDate.Year))
+            if (!yearsProductsStatistics.ContainsKey(order.OrderDate.Year))
             {
-                yearsList.Add(order.OrderDate.Year);
+                yearsProductsStatistics.Add(order.OrderDate.Year, new ProductsStatisticCounter());
+            }
+            foreach (var item in order.Items)
+            {
+                yearsProductsStatistics[order.OrderDate.Year].IncreaseProductQuantity(item);
             }
         }
 
-        yearsList.Sort((x, y) => y.CompareTo(x));
-
-        var resultStringBuilder = new StringBuilder();
-
-        foreach (var year in yearsList)
+        foreach (var year in yearsProductsStatistics.Keys.OrderByDescending(i => i))
         {
-            var productsStatisticCounter = new ProductsStatisticCounter();
-
-            foreach (var order in Orders.Where(obj => obj.OrderDate.Year == year))
-            {
-                foreach (var item in order.Items)
-                {
-                    productsStatisticCounter.IncreaseProductQuantity(item);
-                }
-            }
-
-            var productsStatistics = productsStatisticCounter.GetStatisticQuantityFiltered();
             double totalPrice = 0;
-            foreach (var product in productsStatistics)
+            foreach (var product in yearsProductsStatistics[year].productsStatistic)
             {
                 var foundProduct = Products.Find(i => i.Id == product.ProductId);
                 totalPrice += foundProduct.Price * product.Quantity;
             }
-
+            
+            var bestProductStatisticItem = yearsProductsStatistics[year].productsStatistic.MaxBy(i => i.Quantity);
+            var bestProductName = Products.Find(i => i.Id == bestProductStatisticItem.ProductId).Name;
+            
             resultStringBuilder.Append($"{year} - {String.Format("{0:0.00}", totalPrice)} руб.\r\n");
-            var bestProduct = Products.Find(i => i.Id == productsStatistics[0].ProductId);
-            resultStringBuilder.Append(
-                $"Most selling: {bestProduct.Name} ({productsStatistics[0].Quantity} item(s))\r\n\n");
+            resultStringBuilder.Append($"Most selling: {bestProductName} ({bestProductStatisticItem.Quantity} item(s))\r\n\n");
         }
 
         return resultStringBuilder.ToString();
@@ -84,26 +77,24 @@ public class Store
 
     private class ProductsStatisticCounter
     {
-        private readonly List<ProductStatisticItem> _productsQuantities = new List<ProductStatisticItem>();
+        public List<ProductStatisticItem> productsStatistic { get; }
+
+        public ProductsStatisticCounter()
+        {
+            productsStatistic = new List<ProductStatisticItem>();
+        }
 
         public void IncreaseProductQuantity(Order.OrderItem orderItem)
         {
-            var foundedProduct = _productsQuantities.Find(i => i.ProductId == orderItem.ProductId);
+            var foundedProduct = productsStatistic.Find(i => i.ProductId == orderItem.ProductId);
             if (foundedProduct != null)
             {
                 foundedProduct.Quantity += orderItem.Quantity;
             }
             else
             {
-                _productsQuantities.Add(new ProductStatisticItem(orderItem.ProductId, orderItem.Quantity));
+                productsStatistic.Add(new ProductStatisticItem(orderItem.ProductId, orderItem.Quantity));
             }
-        }
-
-        public List<ProductStatisticItem> GetStatisticQuantityFiltered()
-        {
-            var sortedProductsList = new List<ProductStatisticItem>(_productsQuantities);
-            sortedProductsList.Sort((x, y) => y.Quantity.CompareTo(x.Quantity));
-            return sortedProductsList;
         }
     }
 
@@ -111,7 +102,6 @@ public class Store
     {
         public int ProductId { get; }
         public int Quantity { get; set; }
-
 
         public ProductStatisticItem(int productId, int quantity)
         {
@@ -127,20 +117,20 @@ public class Product
     public string Name { get; set; }
     public double Price { get; set; }
 }
-
+ 
 public class Order
 {
     public int UserId { get; set; }
     public List<OrderItem> Items { get; set; }
     public DateTime OrderDate { get; set; }
-
+ 
     public class OrderItem
     {
         public int ProductId { get; set; }
         public int Quantity { get; set; }
     }
 }
-
+ 
 public class Program
 {
     static void Main(string[] args)
@@ -197,7 +187,7 @@ public class Program
                 }
             }
         };
-
+        
         Console.WriteLine(store.GetProductStatistics(2022));
         Console.WriteLine(store.GetProductStatistics(2015));
         Console.WriteLine(store.GetYearsStatistics());
